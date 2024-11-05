@@ -189,13 +189,15 @@ static int recv_delta_and_patch_file(int sock, const char *fname) {
     char fname_new[PATH_MAX];
     int ret = snprintf(fname_new, sizeof(fname_new), "%s.new", fname);
     if (ret < 0 || (size_t)ret >= sizeof(fname_new)) {
-        fputs("Filename too long", stderr);
+        fputs("Filename too long\n", stderr);
         return -1;
     }
 
+    /* Open new file */
     FILE *new = rs_file_open(fname_new, "w", 1);
     assert(new != NULL);
 
+    /* Open basis file */
     FILE *old = old = rs_file_open(fname, "r", 0);
     assert(old != NULL);
 

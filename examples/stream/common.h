@@ -21,7 +21,7 @@
 
 /** \file common.h
  * Simple network protocol on top of TCP. Used for client-server communication
- * in stream example code.
+ * in the Stream API example code.
  *
  * Header format:
  *   +----------+----------|

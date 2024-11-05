@@ -62,9 +62,9 @@ int main(int argc, char *argv[])
 
     puts("Sending delta...");
     ret = send_delta(sock, sig, fname);
+    rs_free_sumset(sig);
     if (ret == -1) {
         close(sock);
-        rs_free_sumset(sig);
         return EXIT_FAILURE;
     }
 
