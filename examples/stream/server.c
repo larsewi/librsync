@@ -31,7 +31,7 @@
 #include "common.h"
 
 
-static char in_buf[BUFFER_SIZE], out_buf[BUFFER_SIZE];
+static char in_buf[BUFFER_SIZE * 2], out_buf[BUFFER_SIZE * 2];
 
 static int accept_connection(void);
 static int recv_signature(int sock, rs_signature_t **sig);
@@ -135,6 +135,14 @@ static int recv_signature(int sock, rs_signature_t **sig) {
     rs_result res;
     do {
         if (bufs.eof_in == 0) {
+            if (bufs.avail_in > BUFFER_SIZE) {
+                /* The job requires more data, but we cannot fit another
+                 * message into the input buffer */
+                fputs("Insufficient buffer capacity", stderr);
+                rs_job_free(job);
+                return -1;
+            }
+
             if (bufs.avail_in > 0) {
                 /* Leftover tail data, move it to front */
                 memmove(in_buf, bufs.next_in, bufs.avail_in);
@@ -185,10 +193,18 @@ static int send_delta(int sock, rs_signature_t *sig, const char *fname) {
     rs_buffers_t bufs = { 0 };
     bufs.next_in = in_buf;
     bufs.next_out = out_buf;
-    bufs.avail_out = sizeof(out_buf);
+    bufs.avail_out = BUFFER_SIZE; /* We cannot send more in one message */
 
     do {
         if (bufs.eof_in == 0) {
+            if (bufs.avail_in >= sizeof(in_buf)) {
+                /* The job requires more data, but the input buffer is full */
+                fputs("Insufficient buffer capacity", stderr);
+                rs_file_close(file);
+                rs_job_free(job);
+                return -1;
+            }
+
             if (bufs.avail_in > 0) {
                 /* Left over tail data, move to front */
                 memmove(in_buf, bufs.next_in, bufs.avail_in);
@@ -220,6 +236,7 @@ static int send_delta(int sock, rs_signature_t *sig, const char *fname) {
         /* Drain output buffer, if there is data */
         size_t present = bufs.next_out - out_buf;
         if (present > 0) {
+            assert(present <= BUFFER_SIZE);
             int ret = send_message(sock, out_buf, present, (res == RS_DONE) ? 1 : 0);
             if (ret == -1) {
                 rs_file_close(file);
@@ -228,7 +245,7 @@ static int send_delta(int sock, rs_signature_t *sig, const char *fname) {
             }
 
             bufs.next_out = out_buf;
-            bufs.avail_out = sizeof(out_buf);
+            bufs.avail_out = BUFFER_SIZE;
         }
     } while (res != RS_DONE);
 

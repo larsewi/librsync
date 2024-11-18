@@ -39,7 +39,7 @@
 #define IP_ADDRESS "127.0.0.1"
 
 
-static char in_buf[BUFFER_SIZE], out_buf[BUFFER_SIZE];
+static char in_buf[BUFFER_SIZE * 2], out_buf[BUFFER_SIZE * 2];
 
 static int connect_to_server(const char *ip_addr);
 static int send_signature(int sock, const char *fname);
@@ -127,11 +127,19 @@ static int send_signature(int sock, const char *fname) {
     rs_buffers_t bufs = { 0 };
     bufs.next_in = in_buf;
     bufs.next_out = out_buf;
-    bufs.avail_out = sizeof(out_buf);
+    bufs.avail_out = BUFFER_SIZE; /* We cannot send more in one message */
 
     /* Generate signature */
     do {
         if (bufs.eof_in == 0) {
+            if (bufs.avail_in >= sizeof(in_buf)) {
+                /* The job requires more data, but the input buffer is full */
+                fputs("Insufficient buffer capacity", stderr);
+                rs_file_close(file);
+                rs_job_free(job);
+                return -1;
+            }
+
             if (bufs.avail_in > 0) {
                 /* Leftover tail data, move it to front */
                 memmove(in_buf, bufs.next_in, bufs.avail_in);
@@ -167,6 +175,7 @@ static int send_signature(int sock, const char *fname) {
         size_t present = bufs.next_out - out_buf;
         if (present > 0) {
             /* Drain output buffer */
+            assert(present <= BUFFER_SIZE);
             int ret = send_message(sock, out_buf, present, (res == RS_DONE) ? 1 : 0);
             if (ret == -1) {
                 rs_file_close(file);
@@ -175,7 +184,7 @@ static int send_signature(int sock, const char *fname) {
             }
 
             bufs.next_out = out_buf;
-            bufs.avail_out = sizeof(out_buf);
+            bufs.avail_out = BUFFER_SIZE;
         }
     } while (res != RS_DONE);
 
@@ -213,6 +222,16 @@ static int recv_delta_and_patch_file(int sock, const char *fname) {
     rs_result res;
     do {
         if (bufs.eof_in == 0) {
+            if (bufs.avail_in > BUFFER_SIZE) {
+                /* The job requires more data, but we cannot fit another
+                 * message into the input buffer */
+                fputs("Insufficient buffer capacity", stderr);
+                fclose(new);
+                fclose(old);
+                rs_job_free(job);
+                return -1;
+            }
+
             if (bufs.avail_in > 0) {
                 /* Left over tail data, move to front */
                 memmove(in_buf, bufs.next_in, bufs.avail_in);
